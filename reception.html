@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>受付テスト</title>
+<style>
+  :root { --bg: #eef1f4; --card: #fff; --ink: #1c232b; --muted: #5b6672; --line: #d5dbe1; --accent: #1f5fae; --ok: #0b7a4b; --warn: #a24a12; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; }
+  header { padding: 12px 16px; background: var(--ink); color: #fff; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; }
+  header span { color: #b9c3cc; font-size: 13px; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; padding: 16px; max-width: 1200px; margin: 0 auto; }
+  @media (max-width: 860px) { main { grid-template-columns: minmax(0, 1fr); } }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
+  h2 { font-size: 15px; margin: 0 0 10px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  input, select, button { font: inherit; }
+  input, select { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+  button { padding: 8px 14px; border: 0; border-radius: 8px; background: var(--accent); color: #fff; font-weight: 700; cursor: pointer; }
+  button.sec { background: #e3e8ee; color: var(--ink); font-weight: 400; }
+  button:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
+  .row > input { flex: 1 1 140px; }
+  #reader { width: 100%; max-width: 420px; }
+  .result { border-left: 4px solid var(--accent); background: #f6f8fb; padding: 10px 12px; border-radius: 6px; margin: 10px 0; }
+  .result.ok { border-color: var(--ok); }
+  .result.warn { border-color: var(--warn); }
+  .result b { display: block; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .scroll { overflow-x: auto; }
+  .kpi { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .kpi div { background: #f6f8fb; border-radius: 8px; padding: 8px; }
+  .kpi b { display: block; font-size: 20px; }
+  details { margin-top: 12px; }
+  summary { cursor: pointer; font-weight: 700; }
+  label.cand { display: block; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; margin: 4px 0; }
+</style>
+</head>
+<body>
+<header><h1>受付テスト</h1><span id="who"></span></header>
+<main>
+  <div style="display:grid;gap:16px;min-width:0">
+    <section id="setup" hidden>
+      <h2>受付ページの設定</h2>
+      <p class="muted">GASのスクリプト プロパティに入れた合言葉（STATION_KEY）を入れてください。この画面のブラウザにだけ保存します。</p>
+      <div class="row"><input id="keyIn" type="password" placeholder="合言葉"><button id="keySave">保存</button></div>
+    </section>
+    <section>
+      <h2>QRを読む</h2>
+      <div id="reader"></div>
+      <div class="row">
+        <input id="qrIn" placeholder="USBリーダーはここに読ませる（Enterで受付）" autocomplete="off">
+        <button class="sec" id="cam">カメラを使う</button>
+      </div>
+      <div id="out"></div>
+      <div id="linkBox" hidden>
+        <h2>本人を検索して結ぶ</h2>
+        <div class="row"><input id="q" placeholder="フリガナか氏名（2文字以上）"><input id="sch" placeholder="学校"><input id="gy" placeholder="卒年（例 2028）" inputmode="numeric" style="flex:0 1 120px"><button id="searchBtn">検索</button></div>
+        <div id="cands"></div>
+        <div class="row">
+          <select id="idm"><option value="">本人確認の方法</option><option>学生証</option><option>身分証</option><option>その他</option></select>
+          <button id="linkBtn" disabled>この人に結ぶ</button>
+          <button class="sec" id="holdBtn">保留受付（社員が後で確定）</button>
+        </div>
+      </div>
+    </section>
+  </div>
+  <section>
+    <div class="row" style="justify-content:space-between"><h2 style="margin:0">今日の記録</h2><div class="row" style="margin:0"><button class="sec" id="deliverBtn">通知を送る</button><button class="sec" id="reloadBtn">更新</button></div></div>
+    <div class="kpi" id="kpi"></div>
+    <h2 style="margin-top:14px">来店（新しい順）</h2>
+    <div class="scroll"><table id="visits"></table></div>
+    <h2 style="margin-top:14px">通知待ち</h2>
+    <div class="scroll"><table id="outbox"></table></div>
+    <details>
+      <summary>社員の操作（テスト用）</summary>
+      <p class="muted">誤って結んだときの解除と、保留受付の確定を試せます。操作した人は「emp_test」、理由は「テスト」で記録します。</p>
+      <div class="row"><select id="unlinkSel"></select><select id="unlinkMode"><option value="unmatch">来店は未照合に戻す</option><option value="cancel">来店を取り消す</option></select><button id="unlinkBtn">紐づけを解除</button></div>
+      <div class="row"><select id="holdSel"></select><span class="muted">→ 上の検索で選んだ人に</span><button id="resolveBtn">保留を確定</button></div>
+    </details>
+  </section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="./config.js"></script>
+<script>
+const CFG = window.APP_CONFIG || {};
+const STATION = { stationId: CFG.STATION_ID || 'tokyo-01', staffId: CFG.STAFF_ID || 'staff_a' };
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const store = { get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} } };
+let stationKey = store.get('stationKey') || '';
+let current = { qr: null }, chosen = null, busy = false, lastText = '', lastAt = 0;
+
+$('who').textContent = `端末 ${STATION.stationId}／スタッフ ${STATION.staffId}`;
+if (!stationKey) $('setup').hidden = false;
+$('keySave').onclick = () => { stationKey = $('keyIn').value.trim(); store.set('stationKey', stationKey); $('setup').hidden = !!stationKey; refresh(); };
+
+async function api(body, withStation = true) {
+  const payload = withStation ? { ...body, ...STATION, stationKey } : body;
+  const r = await fetch(CFG.GAS_URL, { method: 'POST', body: JSON.stringify(payload) });
+  return r.json();
+}
+function show(kind, title, detail = '') { $('out').innerHTML = `<div class="result ${kind}"><b>${esc(title)}</b>${detail ? `<span class="muted">${esc(detail)}</span>` : ''}</div>`; }
+const uuid = () => crypto.randomUUID();
+
+// 要求IDは受付1回ごとに作り、通信に失敗したら同じ要求IDで送り直す（二重に記録しない）
+async function send(body) {
+  for (let i = 0; i < 3; i++) {
+    try { return await api(body); } catch (e) { if (i === 2) throw e; await new Promise(r => setTimeout(r, 800)); }
+  }
+}
+
+async function onQr(text) {
+  text = String(text || '').trim();
+  if (!text || busy) return;
+  const t = Date.now();
+  if (text === lastText && t - lastAt < 4000) return;   // カメラが同じQRを続けて読んだ分は無視する
+  lastText = text; lastAt = t; busy = true;
+  current = { qr: text }; chosen = null; $('linkBox').hidden = true; $('cands').innerHTML = ''; $('linkBtn').disabled = true;
+  show('', '確認しています…');
+  try {
+    const r = await send({ action: 'scan', requestId: uuid(), qr: text });
+    handle(r);
+  } catch (e) { show('warn', '通信に失敗しました', String(e)); }
+  busy = false; refresh();
+}
+
+function handle(r) {
+  if (r.error) return show('warn', r.message || r.error, r.error);
+  const notify = r.notify ? `（${r.notify.kind}へ通知待ち）` : '';
+  switch (r.result) {
+    case 'recorded': return show('ok', `記録しました：${r.name || ''} さん`, notify);
+    case 'duplicate_recent': return show('ok', '直前に受付済みです（記録は増やしません）');
+    case 'needs_link': case 'pending_registration':
+      show('', r.message || '初回です。本人を検索して結んでください', r.openHold ? '保留受付があります' : '');
+      $('linkBox').hidden = false; $('q').focus(); return;
+    case 'linked_and_recorded': case 'linked_already_recorded':
+      $('linkBox').hidden = true; return show('ok', `結んで記録しました：${r.name || ''} さん`, [r.message, notify].filter(Boolean).join(' '));
+    case 'linked_but_suspended': $('linkBox').hidden = true; return show('warn', r.message || '利用停止中です');
+    case 'held': $('linkBox').hidden = true; return show('ok', r.message || '保留受付で記録しました', notify);
+    default: return show('warn', r.message || r.result);
+  }
+}
+
+$('qrIn').addEventListener('keydown', e => { if (e.key === 'Enter') { const v = $('qrIn').value; $('qrIn').value = ''; lastText = ''; onQr(v); } });
+
+let scanner = null;
+$('cam').onclick = async () => {
+  if (scanner) { await scanner.stop().catch(() => {}); scanner = null; $('cam').textContent = 'カメラを使う'; return; }
+  scanner = new Html5Qrcode('reader');
+  try {
+    await scanner.start({ facingMode: 'user' }, { fps: 10, qrbox: 240 }, txt => onQr(txt));
+    $('cam').textContent = 'カメラを止める';
+  } catch (e) { scanner = null; show('warn', 'カメラを使えません', String(e)); }
+};
+
+$('searchBtn').onclick = async () => {
+  $('cands').innerHTML = '<p class="muted">検索しています…</p>';
+  const r = await send({ action: 'search', query: $('q').value, school: $('sch').value, gradYear: $('gy').value });
+  if (r.error) { $('cands').innerHTML = `<p class="muted">${esc(r.message || r.error)}</p>`; return; }
+  if (!r.candidates.length) { $('cands').innerHTML = `<p class="muted">${esc(r.message || '該当なし')}</p>`; return; }
+  $('cands').innerHTML = r.candidates.map((c, i) => `<label class="cand"><input type="radio" name="cand" value="${i}"> ${esc(c.oldNumber || '')} ${esc(c.name)}（${esc(c.kana)}）${esc(c.school)}・${esc(c.gradYear)}卒 ${c.status !== '有効' ? '［' + esc(c.status) + '］' : ''}</label>`).join('');
+  document.querySelectorAll('input[name=cand]').forEach(el => el.onchange = () => { chosen = r.candidates[Number(el.value)]; $('linkBtn').disabled = false; });
+};
+$('linkBtn').onclick = async () => {
+  if (!chosen || !current.qr) return;
+  if (!$('idm').value) return show('warn', '本人確認の方法を選んでください');
+  const r = await send({ action: 'link', requestId: uuid(), qr: current.qr, memberKey: chosen.memberKey, idCheckMethod: $('idm').value });
+  handle(r); refresh();
+};
+$('holdBtn').onclick = async () => {
+  if (!current.qr) return;
+  const r = await send({ action: 'hold', requestId: uuid(), qr: current.qr });
+  handle(r); refresh();
+};
+$('deliverBtn').onclick = async () => { const r = await send({ action: 'deliver' }); show(r.error ? 'warn' : 'ok', r.error ? (r.message || r.error) : `通知：送信 ${r.sent}件・中止 ${r.stopped}件`); refresh(); };
+$('reloadBtn').onclick = () => refresh();
+$('unlinkBtn').onclick = async () => {
+  const key = $('unlinkSel').value; if (!key) return;
+  if ($('unlinkBtn').dataset.armed !== '1') { $('unlinkBtn').dataset.armed = '1'; $('unlinkBtn').textContent = 'もう一度押すと解除'; return; }
+  $('unlinkBtn').dataset.armed = ''; $('unlinkBtn').textContent = '紐づけを解除';
+  const r = await send({ action: 'unlink', memberKey: key, visits: $('unlinkMode').value });
+  show(r.error ? 'warn' : 'ok', r.error ? (r.message || r.error) : `解除しました（直した来店 ${r.visitsChanged}件）`); refresh();
+};
+$('resolveBtn').onclick = async () => {
+  const hv = $('holdSel').value; if (!hv) return;
+  if (!chosen) return show('warn', '上の検索で、確定する人を選んでください');
+  if (!$('idm').value) return show('warn', '本人確認の方法を選んでください');
+  const r = await send({ action: 'resolveHold', holdVisitKey: hv, outcome: 'link', memberKey: chosen.memberKey, idCheckMethod: $('idm').value });
+  show(r.error ? 'warn' : 'ok', r.error ? (r.message || r.error) : (r.message || `保留を確定しました（${r.result}）`)); refresh();
+};
+
+async function refresh() {
+  if (!stationKey || !CFG.GAS_URL) return;
+  let d;
+  try { d = await api({ action: 'dashboard' }); } catch (e) { return; }
+  if (d.error) { if (d.error === 'STATION_AUTH_FAILED') { $('setup').hidden = false; } return; }
+  const r = d.report;
+  $('kpi').innerHTML = [['延べ来店', r.visits], ['実人数', r.uniqueMembers], ['初回の紐づけ', r.firstLinks], ['確定待ちの保留', r.holdsOpen]].map(([k, v]) => `<div><span class="muted">${k}</span><b>${v}</b></div>`).join('');
+  $('visits').innerHTML = '<tr><th>日時</th><th>方法</th><th>状態</th><th>会員</th><th></th></tr>' + d.visits.map(v => `<tr><td>${esc(v.at)}</td><td>${esc(v.method)}</td><td>${esc(v.state)}</td><td>${esc(v.member)}${v.first ? '（初回）' : ''}</td><td>${v.state !== '取消' ? `<button class="sec" data-cancel="${esc(v.visitKey)}">取消</button>` : ''}</td></tr>`).join('');
+  document.querySelectorAll('[data-cancel]').forEach(b => b.onclick = async () => {
+    if (b.dataset.armed !== '1') { b.dataset.armed = '1'; b.textContent = 'もう一度'; return; }
+    const res = await send({ action: 'cancelVisit', visitKey: b.dataset.cancel });
+    show(res.error ? 'warn' : 'ok', res.error ? (res.message || res.error) : '来店を取り消しました'); refresh();
+  });
+  $('outbox').innerHTML = '<tr><th>作成</th><th>宛先</th><th>状態</th><th>通知文</th></tr>' + d.outbox.map(o => `<tr><td>${esc(o.at)}</td><td>${esc(o.to)}</td><td>${esc(o.status)}${o.reason ? '<br><span class="muted">' + esc(o.reason) + '</span>' : ''}</td><td>${esc(o.text)}</td></tr>`).join('');
+  $('unlinkSel').innerHTML = '<option value="">（結び済みの会員）</option>' + d.linked.map(m => `<option value="${esc(m.memberKey)}">${esc(m.label)}</option>`).join('');
+  $('holdSel').innerHTML = '<option value="">（確定待ちの保留受付）</option>' + d.holds.map(h => `<option value="${esc(h.visitKey)}">${esc(h.at)} の保留受付</option>`).join('');
+}
+refresh(); setInterval(refresh, 15000);
+</script>
+</body>
+</html>
