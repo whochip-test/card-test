@@ -54,6 +54,7 @@
       <div class="row">
         <input id="qrIn" placeholder="USBリーダーはここに読ませる（Enterで受付）" autocomplete="off">
         <button class="sec" id="cam">カメラを使う</button>
+        <button class="sec" id="flip" hidden>カメラ切替</button>
       </div>
       <div id="out"></div>
       <div id="linkBox" hidden>
@@ -147,15 +148,17 @@ function handle(r) {
 
 $('qrIn').addEventListener('keydown', e => { if (e.key === 'Enter') { const v = $('qrIn').value; $('qrIn').value = ''; lastText = ''; onQr(v); } });
 
-let scanner = null;
-$('cam').onclick = async () => {
-  if (scanner) { await scanner.stop().catch(() => {}); scanner = null; $('cam').textContent = 'カメラを使う'; return; }
+let scanner = null, facing = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) ? 'environment' : 'user';   // タブレット・スマホは背面、PCは前面のカメラから
+async function startCam() {
   scanner = new Html5Qrcode('reader');
   try {
-    await scanner.start({ facingMode: 'user' }, { fps: 10, qrbox: 240 }, txt => onQr(txt));
-    $('cam').textContent = 'カメラを止める';
+    await scanner.start({ facingMode: facing }, { fps: 10, qrbox: 240 }, txt => onQr(txt));
+    $('cam').textContent = 'カメラを止める'; $('flip').hidden = false;
   } catch (e) { scanner = null; show('warn', 'カメラを使えません', String(e)); }
-};
+}
+async function stopCam() { if (scanner) { await scanner.stop().catch(() => {}); scanner = null; } $('cam').textContent = 'カメラを使う'; $('flip').hidden = true; }
+$('cam').onclick = () => scanner ? stopCam() : startCam();
+$('flip').onclick = async () => { facing = facing === 'user' ? 'environment' : 'user'; await stopCam(); await startCam(); };
 
 $('searchBtn').onclick = async () => {
   $('cands').innerHTML = '<p class="muted">検索しています…</p>';
